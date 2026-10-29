@@ -1,6 +1,7 @@
 #!/bin/bash
 # firefly_backup.sh
 # Vollständiges FireflyIII Backup/Restore mit Versionserkennung und Image-Caching
+# PiHole, wg-easy, Caddy und DuckDNS laufen während Backup/Restore durch.
 
 # 🔧 Basis-Pfade
 DB_PATH="/var/lib/fireflyiii/mysql"
@@ -11,6 +12,10 @@ SOURCE_DIR="/var/backups/sources"
 KEEP_DAYS=30
 COMPOSE_DIR="/home/chegl"
 UPLOAD_PATH="/var/lib/fireflyiii/upload"
+
+# 🔧 Services, die fürs Backup/Restore gestoppt werden
+# (pihole, wg-easy, caddy, duckdns laufen weiter)
+SERVICES="viseca-upload fireflyiii_cron phpmyadmin fireflyiii db"
 
 # 🔧 Image-Definitionen
 FIREFLY_IMAGE="fireflyiii/core:version-6.4.9"
@@ -26,6 +31,7 @@ mkdir -p "$BACKUP_DIR" "$SOURCE_DIR"
 cleanup_old_backups() {
     echo "🗑️  Alte Backups löschen (> $KEEP_DAYS Tage)..."
     find "$BACKUP_DIR" -type f -name "firefly_backup_*.tar.gz" -mtime +$KEEP_DAYS -exec rm -v {} \;
+    find "$BACKUP_DIR" -type f -name "pihole_teleporter_*.zip" -mtime +$KEEP_DAYS -exec rm -v {} \;
 }
 
 ensure_sources_exist() {
@@ -48,10 +54,29 @@ ensure_sources_exist() {
     fi
 }
 
+backup_pihole() {
+    echo "🕳️  Sichere PiHole-Konfiguration (Teleporter)..."
+    local target="$BACKUP_DIR/pihole_teleporter_${TIMESTAMP}.zip"
+    local tmpzip
+
+    if sudo docker exec -w /tmp pihole pihole-FTL --teleporter >/dev/null 2>&1; then
+        tmpzip=$(sudo docker exec pihole sh -c 'ls -t /tmp/pi-hole_*teleporter*.zip 2>/dev/null | head -1')
+        if [ -n "$tmpzip" ]; then
+            sudo docker cp "pihole:$tmpzip" "$target"
+            sudo docker exec pihole rm -f "$tmpzip"
+            echo "✅ PiHole-Export: $target"
+            return 0
+        fi
+    fi
+    echo "⚠️  PiHole-Export fehlgeschlagen (läuft der Container?), Backup läuft trotzdem weiter."
+}
+
 backup() {
     echo "🔹 Starte FireflyIII Backup (Version $FIREFLY_VERSION)..."
+    backup_pihole
+
     cd "$COMPOSE_DIR"
-    sudo docker compose down
+    sudo docker compose stop $SERVICES
 
     ensure_sources_exist
 
@@ -63,7 +88,7 @@ backup() {
         "$OPENVPN_PATH"
 
     echo "🚀 Starte Container wieder..."
-    sudo docker compose up -d
+    sudo docker compose start $SERVICES
     cleanup_old_backups
 
     echo "✅ Backup abgeschlossen: $BACKUP_FILE"
@@ -86,7 +111,7 @@ restore() {
 
     echo "♻️  Stelle Backup wieder her (Version $RESTORE_VERSION)..."
     cd "$COMPOSE_DIR"
-    sudo docker compose down
+    sudo docker compose stop $SERVICES
 
     echo "📦 Entpacke Backup..."
     sudo tar -xzf "$BACKUP_TO_RESTORE" -C /
@@ -118,7 +143,7 @@ restore() {
     sudo chmod -R 775 "$UPLOAD_PATH"
 
     echo "🚀 Starte Container..."
-    sudo docker compose up -d --no-build --no-recreate
+    sudo docker compose up -d --no-build --no-recreate $SERVICES
     sleep 5
 
     echo "🧼 FireflyIII Cache & Migration..."
@@ -130,6 +155,7 @@ restore() {
     sudo docker exec -it fireflyiii php artisan migrate --force || true
 
     echo "✅ Restore abgeschlossen (Version $RESTORE_VERSION)"
+    echo "ℹ️  PiHole wurde nicht angefasst. Config bei Bedarf über Settings → Teleporter einspielen."
 }
 
 case "$1" in
