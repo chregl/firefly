@@ -112,12 +112,13 @@ services:
       - vpn-net
 
   wg-easy:
-    image: weejewel/wg-easy
+    # image: weejewel/wg-easy
+    image: ghcr.io/wg-easy/wg-easy:14
     container_name: wg-easy
     restart: unless-stopped
     environment:
       - WG_HOST=aegcegext.duckdns.org
-      - PASSWORD=${WG_PASSWORD}
+      - PASSWORD_HASH=${WG_PASSWORD_HASH}
       - WG_PORT=51820
       - WG_SUBNET=10.8.0.0/24
       - WG_ALLOWED_IPS=0.0.0.0/0,::/0
@@ -159,7 +160,7 @@ services:
       - /var/lib/pihole:/etc/pihole
     networks:
       - firefly-net
-      
+
   viseca-upload:
     build:
       context: ./viseca-upload
@@ -168,8 +169,7 @@ services:
     restart: unless-stopped
     user: "1000:1000"
     environment:
-      # - FIREFLY_URL=http://${HOST_IP}:8080 
-      - FIREFLY_URL=https://aegcegext.duckdns.org
+      - FIREFLY_URL=http://${HOST_IP}:8080
     volumes:
       - /home/chegl/control:/control
     ports:
