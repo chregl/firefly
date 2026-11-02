@@ -29,7 +29,8 @@ bash
 unzip viseca-upload.zip -d /tmp/vu
 sudo /tmp/vu/viseca-upload/host/install-host.sh
 # App-Dateien in dein Projektverzeichnis kopieren (v.a. app.py), dann:
-cd /home/chegl && docker compose up -d --build viseca-upload
+
+Docker jeweils neues Image laden mit Script: rebuild-viseca.sh
 
 Das Install-Skript legt das Trigger-Verzeichnis an, kopiert Wrapper und Units und aktiviert firefly-backup-web.path. Vor dem ersten Klick kannst du es direkt testen:
 
